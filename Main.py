@@ -337,6 +337,7 @@ async def handle_link_download(m: Message, url: str):
         return
 
     await m.reply_text("Downloading... This may take a moment.")
+    await m.delete()
 
     def do_post(shortcode: str, tgt: str):
         post = instaloader.Post.from_shortcode(L.context, shortcode)
