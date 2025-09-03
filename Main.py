@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import instaloader
+from pyrogram.enums import ParseMode
 from pyrogram import Client, filters
 from pyrogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
@@ -224,7 +225,7 @@ async def cb_handler(_, cb: CallbackQuery):
         await cb.message.edit_text(
             "Send as: <code>username,password</code>\n\n"
             "❗ Password is NOT stored. Only a session cookie is saved.",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
         )
         return
     if data == "login_user":
@@ -232,7 +233,7 @@ async def cb_handler(_, cb: CallbackQuery):
         await cb.message.edit_text(
             "Send as: <code>username,password</code>\n\n"
             "❗ We do NOT store your password. Only a session cookie is saved for your Telegram account.",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
         )
         return
 
