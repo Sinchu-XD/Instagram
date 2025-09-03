@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import re
 import shutil
@@ -40,6 +41,7 @@ user_state: dict[int, Tuple[str, Optional[str]]] = {}
 
 # ----- UI Helpers -----
 
+
 def main_menu(is_owner: bool) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("📥 Download", callback_data="menu_download")],
@@ -77,6 +79,7 @@ def sh_menu() -> InlineKeyboardMarkup:
 
 # ----- Instaloader helpers -----
 
+
 def make_loader() -> instaloader.Instaloader:
     L = instaloader.Instaloader(
         dirname_pattern=str(DL_DIR / "{target}"),
@@ -100,6 +103,7 @@ def load_user_session(L: instaloader.Instaloader, tg_user_id: int) -> bool:
     sess_file = ig_session_file_for_user(tg_user_id)
     if sess_file.exists():
         try:
+            # username=None works if session file has username stored
             L.load_session_from_file(username=None, filename=str(sess_file))
             return True
         except Exception:
@@ -160,7 +164,8 @@ async def send_folder_files(message: Message, folder: Path, caption_html: Option
 
 # ----- Command & Menu Handlers -----
 
-@app.on_message(filters.command("start"))
+
+@app.on_message(filters.command("start") & filters.private)
 async def start_cmd(_, m: Message):
     await m.reply_text(
         (
@@ -250,6 +255,8 @@ async def cb_handler(_, cb: CallbackQuery):
 
 # ----- Text input handler (routes by state or auto-detect) -----
 
+INSTAGRAM_REGEX = r"(https?:\/\/(?:www\.)?instagram\.com\/[^\s]+)"
+
 @app.on_message(filters.text & ~filters.command(["start"]))
 async def text_router(_, m: Message):
     uid = m.from_user.id
@@ -288,20 +295,36 @@ async def text_router(_, m: Message):
             await m.reply_text(f"Error: {e}")
             return
 
-    # 2) No state → auto-detect
-    if "instagram.com" in txt:
+    # 2) Auto-detect
+    # If in group/supergroup/channel: only act when an instagram link is present
+    chat_type = m.chat.type  # 'private', 'group', 'supergroup', 'channel'
+    has_instalink = bool(re.search(INSTAGRAM_REGEX, txt))
+    is_username_like = bool(re.fullmatch(r"[A-Za-z0-9._]+", txt))
+
+    if chat_type != "private":
+        # group or channel: only act on messages that contain an instagram link
+        if not has_instalink:
+            return  # ignore silently in groups
+        # proceed to handle link
         await handle_link_download(m, txt)
         return
 
-    # If looks like a username (letters, dots, underscores)
-    if re.fullmatch(r"[A-Za-z0-9._]+", txt):
+    # private chat:
+    if has_instalink:
+        await handle_link_download(m, txt)
+        return
+
+    if is_username_like:
+        # username/profile info allowed in private only
         await handle_profile_info(m, txt)
         return
 
+    # private but invalid input
     await m.reply_text("Send a valid Instagram link or a username.")
 
 
 # ----- Handlers Implementation -----
+
 
 async def handle_login(m: Message, creds: str, owner_only: bool):
     uid = m.from_user.id
@@ -316,14 +339,15 @@ async def handle_login(m: Message, creds: str, owner_only: bool):
     username, password = [x.strip() for x in creds.split(",", 1)]
     L = make_loader()
 
-    await m.reply_text("Attempting login...")
+    status = await m.reply_text("Attempting login...")
+
     try:
         # NOTE: 2FA interactive is not supported via chat. Use non-2FA accounts.
         await run_blocking(L.login, username, password)
         save_user_session(L, uid)
-        await m.reply_text("✅ Login successful. Session saved. We do NOT store your password.")
+        await status.edit_text("✅ Login successful. Session saved. We do NOT store your password.")
     except Exception as e:
-        await m.reply_text(f"❌ Login failed: {e}\nIf 2FA is enabled, disable it or provide a pre-saved session.")
+        await status.edit_text(f"❌ Login failed: {e}\nIf 2FA is enabled, disable it or provide a pre-saved session.")
 
 
 async def handle_link_download(m: Message, url: str):
@@ -333,12 +357,21 @@ async def handle_link_download(m: Message, url: str):
 
     sc = extract_shortcode_from_url(url)
     if not sc:
+        # try to extract via regex fallback (may be full url)
+        mtext = url.strip()
+        m2 = re.search(r"(?:/p/|/reel/|/tv/)([A-Za-z0-9_-]+)", mtext)
+        if m2:
+            sc = m2.group(1)
+
+    if not sc:
+        # In group: don't reply unnecessarily
+        if m.chat.type != "private":
+            return
         await m.reply_text("Could not parse shortcode from URL. Send full post/reel/igtv link.")
         return
 
-    cb = await m.reply_text("Downloading... This may take a moment.")
-    await m.delete()
-    await cb.delete()
+    status = await m.reply_text("Downloading... This may take a moment.")
+    # Do NOT delete user's message; only delete status when done.
 
     def do_post(shortcode: str, tgt: str):
         post = instaloader.Post.from_shortcode(L.context, shortcode)
@@ -356,9 +389,22 @@ async def handle_link_download(m: Message, url: str):
         # Build caption
         caption = (post.caption or "").strip()
         await send_folder_files(m, tgt_folder, caption_html=caption if caption else None)
+        # delete status message after done
+        try:
+            await status.delete()
+        except Exception:
+            pass
     except instaloader.exceptions.LoginRequiredException:
+        try:
+            await status.delete()
+        except Exception:
+            pass
         await m.reply_text("Private content requires login. Use the Login menu first.")
     except Exception as e:
+        try:
+            await status.delete()
+        except Exception:
+            pass
         await m.reply_text(f"Download failed: {e}")
 
 
@@ -507,4 +553,3 @@ async def handle_highlights(m: Message, username: str):
 if __name__ == "__main__":
     print("Starting Instagram Downloader Bot (Instaloader)...")
     app.run()
-  
