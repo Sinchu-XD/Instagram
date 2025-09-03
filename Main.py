@@ -336,8 +336,9 @@ async def handle_link_download(m: Message, url: str):
         await m.reply_text("Could not parse shortcode from URL. Send full post/reel/igtv link.")
         return
 
-    await m.reply_text("Downloading... This may take a moment.")
+    cb = await m.reply_text("Downloading... This may take a moment.")
     await m.delete()
+    await cb.delete()
 
     def do_post(shortcode: str, tgt: str):
         post = instaloader.Post.from_shortcode(L.context, shortcode)
