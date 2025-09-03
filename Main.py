@@ -142,7 +142,7 @@ async def send_folder_files(message: Message, folder: Path, caption_html: Option
         # send caption first as a separate message (blockquote formatting)
         await message.reply_text(
             "📥 Download Complete\n────────────\n<blockquote>" + caption_html + "</blockquote>",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
 
@@ -418,7 +418,7 @@ async def handle_profile_info(m: Message, username: str):
             f"{priv}\n\n"
             f"<blockquote>{bio_html}</blockquote>"
         )
-        await m.reply_text(text, parse_mode="html")
+        await m.reply_text(text, parse_mode=ParseMode.HTML)
         # send profile photo too
         await handle_profile_photo(m, info["username"])
     except instaloader.exceptions.LoginRequiredException:
